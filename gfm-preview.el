@@ -90,12 +90,21 @@
                     (re-search-forward "<body")
                     (replace-match "<body class=\"markdown-body\"")
                     (goto-char (point-max)))
-                '((name . markdown-xhtml-header-with-markdown-body-class))))
+                '((name . markdown-xhtml-header-with-markdown-body-class)))
+  (if (eq system-type 'windows-nt)
+      (advice-add 'request--curl-command :around
+                  (lambda (orig-func &rest args)
+                    ;; Monkey-patch, windows curl doesnt support --compressed yet
+                    (let ((r (apply orig-func args)))
+                      (delete "--compressed" r)))
+                  '((name . request--curl-no-compress)))))
 
 (defun gfm-preview--exit ()
   "UnInitialize."
   (advice-remove 'markdown-add-xhtml-header-and-footer
-                 'markdown-xhtml-header-with-markdown-body-class))
+                 'markdown-xhtml-header-with-markdown-body-class)
+  (advice-remove 'request--curl-command
+                 'request--curl-no-compress))
 
 ;;;###autoload
 (define-minor-mode gfm-preview-mode
