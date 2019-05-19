@@ -17,7 +17,7 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-;; Package-Requires: ((emacs "26.1") (request) (emacs-aio))
+;; Package-Requires: ((emacs "26.1") (request) (aio) (markdown-mode))
 
 ;;; Commentary:
 
@@ -25,39 +25,88 @@
 
 ;;; Code:
 
+(require 'markdown-mode)
 (require 'request)
-(require 'emacs-aio)
+(require 'aio)
+(require 'json)
 
-(provide 'gfm-preview)
+(defgroup gfm-preview nil
+  "Minor mode for previewing GFM."
+  :prefix "gfm-preview-"
+  :group 'markdown)
 
-(defvar github-url "https://api.github.com"
-  "Github API url.")
+(defcustom gfm-preview-github-url "https://api.github.com"
+  "Github API url."
+  :group 'gfm-preview
+  :type 'string)
+
+(defcustom gfm-preview-css-paths
+  '("https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.min.css")
+  "Github markdown css paths."
+  :group 'gfm-preview
+  :type '(repeat string))
 
 (defun gfm-preview--get-preview (text callback &optional context)
   "TEXT CALLBACK CONTEXT."
-  (request (concat github-url "/markdown")
-           :type "POST"
-           :data (encode-coding-string (json-encode `((text . ,text)
-                                                      (mode . "gfm")
-                                                      (context . ,context)))
-                                       'utf-8 'nocopy)
-           :headers `(("content-type" . "application/json"))
-           :parser 'buffer-string
-           :success (cl-function
-                     (lambda (&key data &allow-other-keys)
-                       (if callback (funcall callback data))))
-           :error
-           (cl-function (lambda (&rest _ &key error-thrown &allow-other-keys)
-                          (message "Got error: %S" error-thrown)))
-           :complete (lambda (&rest _) (message "Finished!"))))
+  (let ((request-backend 'curl))
+    (request (concat gfm-preview-github-url "/markdown")
+             :type "POST"
+             :data (encode-coding-string (json-encode `((text . ,text)
+                                                        (mode . "gfm")
+                                                        (context . ,context)))
+                                         'utf-8 'nocopy)
+             :headers `(("content-type" . "application/json"))
+             :parser (lambda () (decode-coding-string (buffer-string) 'utf-8 'nocopy))
+             :success (cl-function
+                       (lambda (&key data &allow-other-keys)
+                         (if callback (funcall callback data))))
+             :error
+             (cl-function (lambda (&rest _ &key error-thrown &allow-other-keys)
+                            (message "Got error: %S" error-thrown)))
+             :complete (lambda (&rest _) (message "Finished!")))))
 
-(defun gfm-preview-bufer ()
+(aio-defun gfm-preview (&optional buffer-name)
+  "Preview BUFFER-NAME using GFM in browser."
   (interactive)
-  (gfm-preview--get-preview (buffer-string)
-                            (lambda (data)
-                              (save-excursion
-                                (with-current-buffer (get-buffer-create "*gfm-preview*")
-                                  (erase-buffer)
-                                  (insert data)
-                                  (browse-url-of-buffer))))))
+  (let* ((buffer-name (or buffer-name "*GFM preview*"))
+         (acallback (aio-make-callback)))
+    (gfm-preview--get-preview (buffer-string) (car acallback))
+    (let ((data (car (aio-chain (cdr acallback))))
+          (markdown-css-paths `(,@gfm-preview-css-paths ,@markdown-css-paths)))
+      (save-excursion
+        (with-current-buffer (get-buffer-create buffer-name)
+          (erase-buffer)
+          (insert data)
+          (markdown-add-xhtml-header-and-footer "GFM preview")
+          (browse-url-of-buffer))))))
+
+(defun gfm-preview--init ()
+  "Initialize."
+  ;; better header generating
+  (advice-add 'markdown-add-xhtml-header-and-footer
+                :after
+                #'(lambda (&rest _)
+                    (goto-char (point-min))
+                    (re-search-forward "<body")
+                    (replace-match "<body class=\"markdown-body\"")
+                    (goto-char (point-max)))
+                '((name . markdown-xhtml-header-with-markdown-body-class))))
+
+(defun gfm-preview--exit ()
+  "UnInitialize."
+  (advice-remove 'markdown-add-xhtml-header-and-footer
+                 'markdown-xhtml-header-with-markdown-body-class))
+
+;;;###autoload
+(define-minor-mode gfm-preview-mode
+  "Global minor mode for previewing GFM."
+  :init-value nil
+  :group 'gfm-preview
+  :global t
+  :lighter " GFM-Preview"
+  (if gfm-preview-mode
+      (gfm-preview--init)
+    (gfm-preview--exit)))
+
+(provide 'gfm-preview)
 ;;; gfm-preview.el ends here
