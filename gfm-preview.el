@@ -46,9 +46,10 @@
   :group 'gfm-preview
   :type '(repeat string))
 
-(defun gfm-preview--get-preview (text callback &optional context)
-  "TEXT CALLBACK CONTEXT."
-  (let ((request-backend 'curl))
+(aio-defun gfm-preview--get-preview (text &optional context)
+  "TEXT CONTEXT."
+  (let ((request-backend 'curl)
+        (acallback (aio-make-callback)))
     (request (concat gfm-preview-github-url "/markdown")
              :type "POST"
              :data (encode-coding-string (json-encode `((text . ,text)
@@ -59,26 +60,25 @@
              :parser (lambda () (decode-coding-string (buffer-string) 'utf-8 'nocopy))
              :success (cl-function
                        (lambda (&key data &allow-other-keys)
-                         (if callback (funcall callback data))))
+                         (funcall (car acallback) data)))
              :error
              (cl-function (lambda (&rest _ &key error-thrown &allow-other-keys)
                             (message "Got error: %S" error-thrown)))
-             :complete (lambda (&rest _) (message "Finished!")))))
+             :complete (lambda (&rest _) (message "Finished!")))
+    (car (aio-chain (cdr acallback)))))
 
 (aio-defun gfm-preview (&optional buffer-name)
   "Preview BUFFER-NAME using GFM in browser."
   (interactive)
   (let* ((buffer-name (or buffer-name "*GFM preview*"))
-         (acallback (aio-make-callback)))
-    (gfm-preview--get-preview (buffer-string) (car acallback))
-    (let ((data (car (aio-chain (cdr acallback))))
-          (markdown-css-paths `(,@gfm-preview-css-paths ,@markdown-css-paths)))
-      (save-excursion
-        (with-current-buffer (get-buffer-create buffer-name)
-          (erase-buffer)
-          (insert data)
-          (markdown-add-xhtml-header-and-footer "GFM preview")
-          (browse-url-of-buffer))))))
+         (data (aio-await (gfm-preview--get-preview (buffer-string))))
+         (markdown-css-paths `(,@gfm-preview-css-paths ,@markdown-css-paths)))
+    (save-excursion
+      (with-current-buffer (get-buffer-create buffer-name)
+        (erase-buffer)
+        (insert data)
+        (markdown-add-xhtml-header-and-footer "GFM preview")
+        (browse-url-of-buffer)))))
 
 (defun gfm-preview--init ()
   "Initialize."
