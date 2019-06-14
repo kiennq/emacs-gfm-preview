@@ -67,18 +67,20 @@
              :complete (lambda (&rest _) (message "Finished!")))
     (car (aio-chain (cdr acallback)))))
 
-(aio-defun gfm-preview (&optional buffer-name)
+;;;###autoload
+(defun gfm-preview (&optional buffer-name)
   "Preview BUFFER-NAME using GFM in browser."
   (interactive)
-  (let* ((buffer-name (or buffer-name "*GFM preview*"))
-         (data (aio-await (gfm-preview--get-preview (buffer-string))))
-         (markdown-css-paths `(,@gfm-preview-css-paths ,@markdown-css-paths)))
-    (save-excursion
-      (with-current-buffer (get-buffer-create buffer-name)
-        (erase-buffer)
-        (insert data)
-        (markdown-add-xhtml-header-and-footer "GFM preview")
-        (browse-url-of-buffer)))))
+  (aio-with-async
+    (let* ((buffer-name (or buffer-name "*GFM preview*"))
+           (data (aio-await (gfm-preview--get-preview (buffer-string))))
+           (markdown-css-paths `(,@gfm-preview-css-paths ,@markdown-css-paths)))
+      (save-excursion
+        (with-current-buffer (get-buffer-create buffer-name)
+          (erase-buffer)
+          (insert data)
+          (markdown-add-xhtml-header-and-footer "GFM preview")
+          (browse-url-of-buffer))))))
 
 (defun gfm-preview--init ()
   "Initialize."
