@@ -49,6 +49,7 @@
 (aio-defun gfm-preview--get-preview (text &optional context)
   "TEXT CONTEXT."
   (let ((request-backend 'curl)
+        (default-directory temporary-file-directory)
         (acallback (aio-make-callback)))
     (request (concat gfm-preview-github-url "/markdown")
              :type "POST"
