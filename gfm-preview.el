@@ -29,6 +29,9 @@
 (require 'request)
 (require 'aio)
 (require 'json)
+(require 'browse-url)
+(require 'url-parse)
+(require 'simple)
 
 (defgroup gfm-preview nil
   "Minor mode for previewing GFM."
@@ -53,10 +56,9 @@
         (acallback (aio-make-callback)))
     (request (concat gfm-preview-github-url "/markdown")
              :type "POST"
-             :data (encode-coding-string (json-encode `((text . ,text)
-                                                        (mode . "gfm")
-                                                        (context . ,context)))
-                                         'utf-8 'nocopy)
+             :data (json-encode `((text . ,text)
+                                  (mode . "gfm")
+                                  (context . ,context)))
              :headers `(("content-type" . "application/json"))
              :parser (lambda () (decode-coding-string (buffer-string) 'utf-8 'nocopy))
              :success (cl-function
@@ -68,6 +70,18 @@
              :complete (lambda (&rest _) (message "Finished!")))
     (car (aio-chain (cdr acallback)))))
 
+(defun gfm-preview--browse-url-function (uri &optional _new-window)
+  "Customized `browse-url' function that works in WSL."
+  (if (executable-find "wslpath")
+      (let* ((url (url-generic-parse-url (url-unhex-string uri)))
+             (type (url-type url))
+             (file (decode-coding-string (url-filename url) locale-coding-system)))
+        (if (string= type "file")
+            (call-process-shell-command
+             (format "cmd.exe /c start \"$(wslpath -w %s)\"" file)
+             nil 0)))
+    (funcall #'browse-url-default-browser url _new-window)))
+
 ;;;###autoload
 (defun gfm-preview (&optional buffer-name)
   "Preview BUFFER-NAME using GFM in browser."
@@ -75,7 +89,8 @@
   (aio-with-async
     (let* ((buffer-name (or buffer-name "*GFM preview*"))
            (data (aio-await (gfm-preview--get-preview (buffer-string))))
-           (markdown-css-paths `(,@gfm-preview-css-paths ,@markdown-css-paths)))
+           (markdown-css-paths `(,@gfm-preview-css-paths ,@markdown-css-paths))
+           (browse-url-browser-function #'gfm-preview--browse-url-function))
       (save-excursion
         (with-current-buffer (get-buffer-create buffer-name)
           (erase-buffer)
