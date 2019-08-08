@@ -70,7 +70,7 @@
              :complete (lambda (&rest _) (message "Finished!")))
     (car (aio-chain (cdr acallback)))))
 
-(defun gfm-preview--browse-url-function (uri &optional _new-window)
+(defun gfm-preview--browse-url-function (uri &optional new-window)
   "Customized `browse-url' function that works in WSL."
   (if (executable-find "wslpath")
       (let* ((url (url-generic-parse-url (url-unhex-string uri)))
@@ -80,15 +80,15 @@
             (call-process-shell-command
              (format "cmd.exe /c start \"$(wslpath -w %s)\"" file)
              nil 0)))
-    (funcall #'browse-url-default-browser url _new-window)))
+    (funcall #'browse-url-default-browser uri new-window)))
 
 ;;;###autoload
-(defun gfm-preview (&optional buffer-name)
-  "Preview BUFFER-NAME using GFM in browser."
-  (interactive)
+(defun gfm-preview-region (beg end)
+  "Preview region (BEG END) using GFM in browser."
+  (interactive "r")
   (aio-with-async
-    (let* ((buffer-name (or buffer-name "*GFM preview*"))
-           (data (aio-await (gfm-preview--get-preview (buffer-string))))
+    (let* ((buffer-name "*GFM preview*")
+           (data (aio-await (gfm-preview--get-preview (buffer-substring beg end))))
            (markdown-css-paths `(,@gfm-preview-css-paths ,@markdown-css-paths))
            (browse-url-browser-function #'gfm-preview--browse-url-function))
       (save-excursion
@@ -97,6 +97,12 @@
           (insert data)
           (markdown-add-xhtml-header-and-footer "GFM preview")
           (browse-url-of-buffer))))))
+
+;;;###autoload
+(defun gfm-preview-buffer ()
+  "Preview current buffer using GFM in browser."
+  (interactive)
+  (gfm-preview-region (point-min) (point-max)))
 
 (defun gfm-preview--init ()
   "Initialize."
