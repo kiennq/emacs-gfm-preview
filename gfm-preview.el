@@ -44,7 +44,8 @@
   :type 'string)
 
 (defcustom gfm-preview-css-paths
-  '("https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.min.css")
+  '("https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.min.css"
+    "https://github.githubassets.com/assets/frameworks-b003e0a30d85cc60f5920a4b6ff04123.css")
   "Github markdown css paths."
   :group 'gfm-preview
   :type '(repeat string))
@@ -112,7 +113,7 @@
                 #'(lambda (&rest _)
                     (goto-char (point-min))
                     (re-search-forward "<body")
-                    (replace-match "<body class=\"markdown-body\"")
+                    (replace-match "<body class=\"markdown-body container-lg mt-3\"")
                     (goto-char (point-max)))
                 '((name . markdown-xhtml-header-with-markdown-body-class)))
   (if (eq system-type 'windows-nt)
