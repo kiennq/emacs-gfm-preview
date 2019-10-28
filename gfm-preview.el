@@ -76,7 +76,8 @@
   (if (executable-find "wslpath")
       (let* ((url (url-generic-parse-url (url-unhex-string uri)))
              (type (url-type url))
-             (file (decode-coding-string (url-filename url) locale-coding-system)))
+             (file (decode-coding-string (url-filename url) locale-coding-system))
+             (default-directory temporary-file-directory))
         (if (string= type "file")
             (call-process-shell-command
              (format "cmd.exe /c start \"$(wslpath -w %s)\"" file)
