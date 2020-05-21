@@ -17,7 +17,7 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-;; Package-Requires: ((emacs "26.1") (request) (aio) (markdown-mode))
+;; Package-Requires: ((emacs "26.1") (request) (aio) (markdown-mode) (dash))
 
 ;;; Commentary:
 
@@ -31,7 +31,7 @@
 (require 'json)
 (require 'browse-url)
 (require 'url-parse)
-(require 'simple)
+(require 'dash)
 
 (defgroup gfm-preview nil
   "Minor mode for previewing GFM."
@@ -50,11 +50,11 @@
   :group 'gfm-preview
   :type '(repeat string))
 
-(aio-defun gfm-preview--get-preview (text &optional context)
+(aio-defun gfm-preview--get-preview-async (text &optional context)
   "TEXT CONTEXT."
-  (let ((request-backend 'curl)
-        (default-directory temporary-file-directory)
-        (acallback (aio-make-callback)))
+  (-let ((request-backend 'curl)
+         (default-directory temporary-file-directory)
+         ((callback . promise) (aio-make-callback)))
     (request (concat gfm-preview-github-url "/markdown")
              :type "POST"
              :data (json-encode `((text . ,text)
@@ -64,15 +64,16 @@
              :parser (lambda () (decode-coding-string (buffer-string) 'utf-8 'nocopy))
              :success (cl-function
                        (lambda (&key data &allow-other-keys)
-                         (funcall (car acallback) data)))
+                         (funcall callback data)))
              :error
-             (cl-function (lambda (&rest _ &key error-thrown &allow-other-keys)
+             (cl-function (lambda (&key error-thrown &allow-other-keys)
                             (message "Got error: %S" error-thrown)))
              :complete (lambda (&rest _) (message "Finished!")))
-    (car (aio-chain (cdr acallback)))))
+    (car (aio-chain promise))))
 
 (defun gfm-preview--browse-url-function (uri &optional new-window)
-  "Customized `browse-url' function that works in WSL."
+  "Customized `browse-url' function that works in WSL.
+URI NEW-WINDOW"
   (if (executable-find "wslpath")
       (let* ((url (url-generic-parse-url (url-unhex-string uri)))
              (type (url-type url))
@@ -84,20 +85,34 @@
              nil 0)))
     (funcall #'browse-url-default-browser uri new-window)))
 
+(defvar browse-url-temp-file-name)
+(defvar gfm-preview--buffer nil)
+
+(defun gfm-preview--clean-buffer ()
+  "Clean temporary buffer generated."
+  (when gfm-preview--buffer
+    (kill-buffer gfm-preview--buffer)))
+
 ;;;###autoload
 (defun gfm-preview-region (beg end)
   "Preview region (BEG END) using GFM in browser."
   (interactive "r")
   (aio-with-async
-    (let* ((buffer-name "*GFM preview*")
-           (data (aio-await (gfm-preview--get-preview (buffer-substring beg end))))
+    (let* ((data (aio-await (gfm-preview--get-preview-async (buffer-substring beg end))))
            (markdown-css-paths `(,@gfm-preview-css-paths ,@markdown-css-paths))
            (browse-url-browser-function #'gfm-preview--browse-url-function))
       (save-excursion
-        (with-current-buffer (get-buffer-create buffer-name)
+        (gfm-preview--clean-buffer)
+        (setq gfm-preview--buffer (get-buffer-create " *GFM preview*"))
+        (with-current-buffer gfm-preview--buffer
           (erase-buffer)
           (insert data)
           (markdown-add-xhtml-header-and-footer "GFM preview")
+          (setq browse-url-temp-file-name
+                (convert-standard-filename
+                 (make-temp-file
+                  (expand-file-name ".#burl")
+                  nil ".html")))
           (browse-url-of-buffer))))))
 
 ;;;###autoload
@@ -111,17 +126,19 @@
   ;; better header generating
   (advice-add 'markdown-add-xhtml-header-and-footer
                 :after
-                #'(lambda (&rest _)
+                (lambda (&rest _)
                     (goto-char (point-min))
                     (re-search-forward "<body")
                     (replace-match "<body class=\"markdown-body container-lg mt-3\"")
                     (goto-char (point-max)))
-                '((name . markdown-xhtml-header-with-markdown-body-class))))
+                '((name . markdown-xhtml-header-with-markdown-body-class)))
+  (add-hook 'kill-emacs-hook #'gfm-preview--clean-buffer))
 
 (defun gfm-preview--exit ()
   "UnInitialize."
   (advice-remove 'markdown-add-xhtml-header-and-footer
-                 'markdown-xhtml-header-with-markdown-body-class))
+                 'markdown-xhtml-header-with-markdown-body-class)
+  (remove-hook 'kill-emacs-hook #'gfm-preview--clean-buffer))
 
 ;;;###autoload
 (define-minor-mode gfm-preview-mode
