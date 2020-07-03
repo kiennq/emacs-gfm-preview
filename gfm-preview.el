@@ -32,6 +32,7 @@
 (require 'browse-url)
 (require 'url-parse)
 (require 'dash)
+(require 'timer)
 
 (defgroup gfm-preview nil
   "Minor mode for previewing GFM."
@@ -85,13 +86,24 @@ URI NEW-WINDOW"
              nil 0)))
     (funcall #'browse-url-default-browser uri new-window)))
 
-(defvar browse-url-temp-file-name)
 (defvar gfm-preview--buffer nil)
+(defvar gfm-preview--clean-timer nil
+  "Timer to clean up  `gfm-preview--buffer'.")
+
+(defvar browse-url-temp-file-name)
 
 (defun gfm-preview--clean-buffer ()
-  "Clean temporary buffer generated."
+  "Clean temporary generated buffer."
   (when gfm-preview--buffer
     (kill-buffer gfm-preview--buffer)))
+
+(defun gfm-preview--clean-buffer-delayed ()
+  "Delayed clean temporary generated buffer.
+It's debounced."
+  (when gfm-preview--clean-timer
+    (cancel-timer gfm-preview--clean-timer))
+  (setq gfm-preview--clean-timer
+        (run-with-idle-timer 10 nil #'gfm-preview--clean-buffer)))
 
 ;;;###autoload
 (defun gfm-preview-region (beg end)
@@ -113,7 +125,8 @@ URI NEW-WINDOW"
                  (make-temp-file
                   (expand-file-name ".#burl")
                   nil ".html")))
-          (browse-url-of-buffer))))))
+          (browse-url-of-buffer)
+          (gfm-preview--clean-buffer-delayed))))))
 
 ;;;###autoload
 (defun gfm-preview-buffer ()
