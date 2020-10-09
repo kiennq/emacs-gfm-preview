@@ -123,7 +123,7 @@ It's debounced."
           (setq browse-url-temp-file-name
                 (convert-standard-filename
                  (make-temp-file
-                  (expand-file-name ".#burl")
+                  (expand-file-name ".burl")
                   nil ".html")))
           (browse-url-of-buffer)
           (gfm-preview--clean-buffer-delayed))))))
