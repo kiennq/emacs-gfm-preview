@@ -46,11 +46,17 @@
   :type 'string)
 
 (defcustom gfm-preview-css-paths
-  '("https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.min.css"
-    "https://github.githubassets.com/assets/frameworks-b003e0a30d85cc60f5920a4b6ff04123.css")
+  '("https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.2.0/github-markdown.min.css"
+    "https://github.githubassets.com/assets/primer-c581c4e461bb.css")
   "Github markdown css paths."
   :group 'gfm-preview
   :type '(repeat string))
+
+(defcustom gfm-preview-remap-languages
+  '(("mermaid" . "mermaid-x"))
+  "Alist to remap language tag in markdown to prevent Github render it incorrectly."
+  :group 'gfm-preview
+  :type '(alist :key-type string :value-type string))
 
 (aio-defun gfm-preview--get-preview-async (text &optional context)
   "TEXT CONTEXT."
@@ -62,7 +68,7 @@
              :data (json-encode `((text . ,text)
                                   (mode . "gfm")
                                   (context . ,context)))
-             :headers `(("content-type" . "application/json"))
+             :headers `(("content-type" . "application/vnd.github+json"))
              :parser (lambda () (decode-coding-string (buffer-string) 'utf-8 'nocopy))
              :success (cl-function
                        (lambda (&key data &allow-other-keys)
@@ -106,12 +112,26 @@ It's debounced."
   (setq gfm-preview--clean-timer
         (run-with-idle-timer 10 nil #'gfm-preview--clean-buffer)))
 
+(defun gfm-preview--buffer-substring (beg end)
+  "Get content of region (BEG END) and do necessary modifications."
+  (let ((buf (current-buffer)))
+    (with-temp-buffer
+      (insert-buffer-substring-no-properties buf beg end)
+      (mapc (lambda (arg)
+              (-let [(lang . rep) arg]
+                (goto-char (point-min))
+                (while (re-search-forward (format "^```[ \t]*%s[ \t]*$" lang)
+                                          nil 'noerror)
+                  (replace-match (format "``` %s" rep)))))
+            gfm-preview-remap-languages)
+      (buffer-string))))
+
 ;;;###autoload
 (defun gfm-preview-region (beg end)
   "Preview region (BEG END) using GFM in browser."
   (interactive "r")
   (aio-with-async
-    (let* ((data (aio-await (gfm-preview--get-preview-async (buffer-substring beg end))))
+    (let* ((data (aio-await (gfm-preview--get-preview-async (gfm-preview--buffer-substring beg end))))
            (markdown-css-paths `(,@gfm-preview-css-paths ,@markdown-css-paths))
            (browse-url-browser-function #'gfm-preview--browse-url-function))
       (save-excursion
