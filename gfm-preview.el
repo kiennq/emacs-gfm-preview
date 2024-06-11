@@ -29,7 +29,6 @@
 (require 'markdown-mode)
 (require 'request)
 (require 'aio)
-(require 'json)
 (require 'browse-url)
 (require 'url-parse)
 (require 'dash)
@@ -62,6 +61,16 @@
   :group 'gfm-preview
   :type '(alist :key-type string :value-type string))
 
+
+(defmacro gfm-preview--json-serialize (object)
+  ""
+  (if (fboundp 'json-serialize)
+      `(json-serialize ,object
+                       :null-object  json-null
+                       :false-object json-false)
+    (require 'json)
+    `(json-encode object)))
+
 (aio-defun gfm-preview--get-preview-async (text &optional context)
   "TEXT CONTEXT."
   (-let ((request-backend 'curl)
@@ -69,18 +78,20 @@
          ((callback . promise) (aio-make-callback)))
     (request (concat gfm-preview-github-url "/markdown")
              :type "POST"
-             :data (json-encode `((text . ,text)
-                                  (mode . "gfm")
-                                  (context . ,context)))
-             :headers `(("content-type" . "application/vnd.github+json"))
+             :data (gfm-preview--json-serialize `((text . ,text)
+                                                  (mode . "gfm")
+                                                  (context . ,context)))
+             :headers `(("content-type" . "application/vnd.github+json")
+                        ("Accept" . "application/vnd.github+json")
+                        ("X-GitHub-Api-Version" . "2022-11-28"))
              :parser (lambda () (decode-coding-string (buffer-string) 'utf-8 'nocopy))
              :success (cl-function
                        (lambda (&key data &allow-other-keys)
-                         (funcall callback data)))
+                         (funcall callback data)
+                         (message "Finished!")))
              :error
              (cl-function (lambda (&key error-thrown &allow-other-keys)
-                            (message "Got error: %S" error-thrown)))
-             :complete (lambda (&rest _) (message "Finished!")))
+                            (message "Got error: %S" error-thrown))))
     (car (aio-chain promise))))
 
 (defun gfm-preview--browse-url-function (uri &optional new-window)
