@@ -22,7 +22,7 @@
 
 ;;; Commentary:
 
-;; 
+;;
 
 ;;; Code:
 
@@ -73,14 +73,15 @@
 
 (aio-defun gfm-preview--get-preview-async (text &optional context)
   "TEXT CONTEXT."
-  (-let ((request-backend 'curl)
+  (-let ((request-backend 'url-retrieve)
          (default-directory temporary-file-directory)
          ((callback . promise) (aio-make-callback)))
     (request (concat gfm-preview-github-url "/markdown")
              :type "POST"
-             :data (gfm-preview--json-serialize `((text . ,text)
-                                                  (mode . "gfm")
-                                                  (context . ,context)))
+             :data (encode-coding-string (gfm-preview--json-serialize `((text . ,text)
+                                                                        (mode . "gfm")
+                                                                        (context . ,context)))
+                                         'utf-8 'nocopy)
              :headers `(("content-type" . "application/vnd.github+json")
                         ("Accept" . "application/vnd.github+json")
                         ("X-GitHub-Api-Version" . "2022-11-28"))
