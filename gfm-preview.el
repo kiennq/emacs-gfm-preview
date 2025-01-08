@@ -49,7 +49,7 @@
   :type 'string)
 
 (defcustom gfm-preview-css-paths
-  `("https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown.min.css"
+  `(,(expand-file-name "github-markdown.min.css" gfm-preview-assets-path)
     ,(expand-file-name "primer.css" gfm-preview-assets-path))
   "Github markdown css paths."
   :group 'gfm-preview
