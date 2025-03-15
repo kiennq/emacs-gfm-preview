@@ -61,6 +61,15 @@
   :group 'gfm-preview
   :type '(alist :key-type string :value-type string))
 
+(defcustom gfm-preview-prefer-pandoc t
+  "Prefer to use `pandoc' if available."
+  :group 'gfm-preview
+  :type 'boolean)
+
+(defcustom gfm-preview-pandoc-command "pandoc"
+  "Pandoc command."
+  :group 'gfm-preview
+  :type 'string)
 
 (defmacro gfm-preview--json-serialize (object)
   ""
@@ -71,9 +80,25 @@
     (require 'json)
     `(json-encode object)))
 
-(aio-defun gfm-preview--get-preview-async (text &optional context)
+(aio-defun gfm-preview--exec (&rest command)
+  "Asynchronously execute command COMMAND and return its output string."
+  (let ((promise (aio-promise))
+        (buf (generate-new-buffer " *gfm-preview-command*")))
+    (set-process-sentinel
+     (apply #'start-process "gfm-preview-command" buf command)
+     (lambda (proc _signal)
+       (when (memq (process-status proc) '(exit signal))
+         (with-current-buffer buf
+           (let ((data (buffer-string)))
+             (aio-resolve promise
+                          (-const (when (> (length data) 0) (substring data 0 -1))))))
+         (kill-buffer buf))))
+    (aio-await promise)))
+
+(aio-defun gfm-preview--get-preview-web-async (text &optional context)
   "TEXT CONTEXT."
-  (-let ((request-backend 'url-retrieve)
+  (-let ((text (gfm-preview--preprocess text))
+         (request-backend 'url-retrieve)
          (default-directory temporary-file-directory)
          ((callback . promise) (aio-make-callback)))
     (request (concat gfm-preview-github-url "/markdown")
@@ -94,6 +119,21 @@
              (cl-function (lambda (&key error-thrown &allow-other-keys)
                             (message "Got error: %S" error-thrown))))
     (car (aio-chain promise))))
+
+(aio-defun gfm-preview--get-preview-local-async (text)
+  "Using `gfm-preview-pandoc-command' to render TEXT."
+  (let* ((default-directory temporary-file-directory)
+         (text (encode-coding-string text 'utf-8 'nocopy))
+         (in-file (convert-standard-filename
+                   (make-temp-file "gfm_" nil ".md" text))))
+    (aio-await (gfm-preview--exec gfm-preview-pandoc-command
+                                  "--standalone"
+                                  "--quiet"
+                                  "--mathjax"
+                                  "-f" "gfm"
+                                  "-t" "html5"
+                                  (file-name-nondirectory in-file)))
+    ))
 
 (defun gfm-preview--browse-url-function (uri &optional new-window)
   "Customized `browse-url' function that works in WSL.
@@ -128,26 +168,36 @@ It's debounced."
   (setq gfm-preview--clean-timer
         (run-with-idle-timer 10 nil #'gfm-preview--clean-buffer)))
 
-(defun gfm-preview--buffer-substring (beg end)
-  "Get content of region (BEG END) and do necessary modifications."
-  (let ((buf (current-buffer)))
-    (with-temp-buffer
-      (insert-buffer-substring-no-properties buf beg end)
-      (mapc (lambda (arg)
-              (-let [(lang . rep) arg]
-                (goto-char (point-min))
-                (while (re-search-forward (format "^```[ \t]*%s[ \t]*$" lang)
-                                          nil 'noerror)
-                  (replace-match (format "``` %s" rep)))))
-            gfm-preview-remap-languages)
-      (buffer-string))))
+(defun gfm-preview--preprocess (text)
+  "Pre-processing TEXT."
+  (with-temp-buffer
+    (insert text)
+    (mapc (lambda (arg)
+            (-let [(lang . rep) arg]
+              (goto-char (point-min))
+              (while (re-search-forward (format "^```[ \t]*%s[ \t]*$" lang)
+                                        nil 'noerror)
+                (replace-match (format "``` %s" rep)))))
+          gfm-preview-remap-languages)
+    (buffer-string)))
+
+(defun gfm-preview--use-pandoc-p ()
+  "Check if `gfm-preview-pandoc-command' is available."
+  (and gfm-preview-prefer-pandoc
+       (executable-find gfm-preview-pandoc-command)))
 
 ;;;###autoload
 (defun gfm-preview-region (beg end)
   "Preview region (BEG END) using GFM in browser."
   (interactive "r")
   (aio-with-async
-    (let* ((data (aio-await (gfm-preview--get-preview-async (gfm-preview--buffer-substring beg end))))
+    (let* ((use-pandoc-p (gfm-preview--use-pandoc-p))
+           (data (if use-pandoc-p
+                     (aio-await (gfm-preview--get-preview-local-async
+                                 (buffer-substring-no-properties beg end)))
+                   ;; use Github API
+                   (aio-await (gfm-preview--get-preview-web-async
+                               (buffer-substring-no-properties beg end)))))
            (markdown-css-paths `(,@gfm-preview-css-paths ,@markdown-css-paths))
            (browse-url-browser-function #'gfm-preview--browse-url-function))
       (save-excursion
