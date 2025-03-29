@@ -130,7 +130,12 @@
                                   "--standalone"
                                   "--quiet"
                                   "--mathjax"
-                                  "-f" "gfm"
+                                  "-f" (pcase major-mode
+                                         ('adoc-mode "asciidoc")
+                                         ('djot-ts-mode "djot")
+                                         ('gfm-mode "gfm")
+                                         ('markdown-mode "gfm")
+                                         ('markdown-ts-mode "gfm"))
                                   "-t" "html5"
                                   (file-name-nondirectory in-file)))
     ))
@@ -189,7 +194,9 @@ It's debounced."
 ;;;###autoload
 (defun gfm-preview-region (beg end)
   "Preview region (BEG END) using GFM in browser."
-  (interactive "r")
+  (interactive (if (use-region-p)
+                   (list (region-beginning) (region-end))
+                 (list (point-min) (point-max))))
   (aio-with-async
     (let* ((use-pandoc-p (gfm-preview--use-pandoc-p))
            (data (if use-pandoc-p
@@ -214,12 +221,6 @@ It's debounced."
                   nil ".html")))
           (browse-url-of-buffer)
           (gfm-preview--clean-buffer-delayed))))))
-
-;;;###autoload
-(defun gfm-preview-buffer ()
-  "Preview current buffer using GFM in browser."
-  (interactive)
-  (gfm-preview-region (point-min) (point-max)))
 
 (defun gfm-preview--init ()
   "Initialize."
