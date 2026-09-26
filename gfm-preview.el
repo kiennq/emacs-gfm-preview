@@ -129,7 +129,7 @@
     (aio-await (gfm-preview--exec gfm-preview-pandoc-command
                                   "--standalone"
                                   "--quiet"
-                                  "--mathjax"
+                                  "--math-method=mathjax"
                                   "-f" (pcase major-mode
                                          ('adoc-mode "asciidoc")
                                          ('djot-ts-mode "djot")
