@@ -123,7 +123,9 @@
 (aio-defun gfm-preview--get-preview-local-async (text)
   "Using `gfm-preview-pandoc-command' to render TEXT."
   (let* ((default-directory temporary-file-directory)
-         (text (encode-coding-string text 'utf-8 'nocopy))
+         (text (-> text
+                   (encode-coding-string 'utf-8 'nocopy)
+                   gfm-preview--preprocess))
          (in-file (convert-standard-filename
                    (make-temp-file "gfm_" nil ".md" text))))
     (aio-await (gfm-preview--exec gfm-preview-pandoc-command
@@ -177,6 +179,8 @@ It's debounced."
   "Pre-processing TEXT."
   (with-temp-buffer
     (insert text)
+    (goto-char (point-min))
+    (while (re-search-forward "^:::" nil 'noerror) (replace-match "```"))
     (mapc (lambda (arg)
             (-let [(lang . rep) arg]
               (goto-char (point-min))
