@@ -126,6 +126,7 @@
          (text (-> text
                    (encode-coding-string 'utf-8 'nocopy)
                    gfm-preview--preprocess))
+         (coding-system-for-write 'no-conversion)
          (in-file (convert-standard-filename
                    (make-temp-file "gfm_" nil ".md" text))))
     (aio-await (gfm-preview--exec gfm-preview-pandoc-command
